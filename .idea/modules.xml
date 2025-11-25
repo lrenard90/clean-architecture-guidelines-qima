@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/.idea/clean-architecture-guidelines.iml" filepath="$PROJECT_DIR$/.idea/clean-architecture-guidelines.iml" />
+      <module fileurl="file://$PROJECT_DIR$/project-example/core/src/main/main.iml" filepath="$PROJECT_DIR$/project-example/core/src/main/main.iml" />
+      <module fileurl="file://$PROJECT_DIR$/project-example/adapters/src/main/main2.iml" filepath="$PROJECT_DIR$/project-example/adapters/src/main/main2.iml" />
+      <module fileurl="file://$PROJECT_DIR$/project-example/adapters/src/test/test.iml" filepath="$PROJECT_DIR$/project-example/adapters/src/test/test.iml" />
+      <module fileurl="file://$PROJECT_DIR$/project-example/core/src/test/test2.iml" filepath="$PROJECT_DIR$/project-example/core/src/test/test2.iml" />
+      <module fileurl="file://$PROJECT_DIR$/project-example/core/src/testFixtures/testFixtures.iml" filepath="$PROJECT_DIR$/project-example/core/src/testFixtures/testFixtures.iml" />
+    </modules>
+  </component>
+</project>

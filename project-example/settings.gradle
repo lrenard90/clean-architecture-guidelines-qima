@@ -1,0 +1,5 @@
+rootProject.name = "clean-architecture-java"
+
+include(":core")
+include(":adapters")
+

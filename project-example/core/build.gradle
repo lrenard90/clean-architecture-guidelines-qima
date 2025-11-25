@@ -1,0 +1,26 @@
+plugins {
+    id("java-library")
+    id("java-test-fixtures")
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Test dependencies
+    testImplementation("org.junit.jupiter:junit-jupiter:5.10.0")
+    testImplementation("org.assertj:assertj-core:3.24.2")
+    
+    testFixturesImplementation("org.junit.jupiter:junit-jupiter:5.10.0")
+    testFixturesImplementation("org.assertj:assertj-core:3.24.2")
+}
+
+tasks.jar {
+    enabled = true
+}
+
+tasks.test {
+    useJUnitPlatform()
+}
+

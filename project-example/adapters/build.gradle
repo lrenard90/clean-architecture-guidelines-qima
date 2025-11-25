@@ -1,0 +1,70 @@
+plugins {
+    id("java")
+    id("org.springframework.boot") version "3.3.3"
+    id("io.spring.dependency-management") version "1.1.6"
+    id("application")
+}
+
+repositories {
+    mavenCentral()
+}
+
+def springBootVersion = "3.3.3"
+def mapstructVersion = "1.5.5.Final"
+def restAssuredVersion = "5.4.0"
+def testcontainersVersion = "1.19.3"
+
+dependencies {
+    // Core module dependency
+    implementation(project(":core"))
+    testImplementation(testFixtures(project(":core")))
+
+    // Spring Boot
+    implementation("org.springframework.boot:spring-boot-starter-web:${springBootVersion}")
+    implementation("org.springframework.boot:spring-boot-starter-data-jpa:${springBootVersion}")
+    implementation("org.springframework.boot:spring-boot-starter-validation:${springBootVersion}")
+    testImplementation("org.springframework.boot:spring-boot-starter-test:${springBootVersion}")
+
+    // PostgreSQL
+    implementation("org.postgresql:postgresql")
+    runtimeOnly("org.postgresql:postgresql")
+
+    // MapStruct
+    implementation("org.mapstruct:mapstruct:${mapstructVersion}")
+    annotationProcessor("org.mapstruct:mapstruct-processor:${mapstructVersion}")
+    testAnnotationProcessor("org.mapstruct:mapstruct-processor:${mapstructVersion}")
+
+    // Jackson
+    implementation("com.fasterxml.jackson.core:jackson-databind")
+
+    // Test dependencies
+    testImplementation("org.junit.jupiter:junit-jupiter:5.10.0")
+    testImplementation("org.assertj:assertj-core:3.24.2")
+    
+    // RestAssured
+    testImplementation("io.rest-assured:rest-assured:${restAssuredVersion}")
+    testImplementation("io.rest-assured:json-path:${restAssuredVersion}")
+    testImplementation("io.rest-assured:xml-path:${restAssuredVersion}")
+    
+    // TestContainers
+    testImplementation("org.testcontainers:testcontainers:${testcontainersVersion}")
+    testImplementation("org.testcontainers:junit-jupiter:${testcontainersVersion}")
+    testImplementation("org.testcontainers:postgresql:${testcontainersVersion}")
+}
+
+tasks.test {
+    useJUnitPlatform()
+}
+
+application {
+    mainClass = "adapters.driving.web.spring.SpringBootRestApplication"
+}
+
+tasks.bootJar {
+    enabled = true
+}
+
+tasks.jar {
+    enabled = true
+}
+

@@ -1,4 +1,4 @@
-# Clean Architecture Development Guide (Kotlin/Hexagonal Style)
+# Clean Architecture Development Guide (Hexagonal Style)
 
 This document defines coding rules, module structure, and patterns to follow for developing and migrating code toward a Clean Architecture, based on the analysis of the reference project.
 

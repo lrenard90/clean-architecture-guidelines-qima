@@ -132,20 +132,228 @@ Repositories manipulate **Domain Entities**, not JPA entities.
 **DTOs:** Simple data classes suffixed with `DTO` (e.g., `PostMessageRequestDTO`).
 **Responsibility:** Orchestrate repository calls and execute business logic via domain entities.
 
+**Important Principles:**
+
+1. **Use Cases should NOT call another Use Case:**
+   - Each Use Case represents a single business operation/user story
+   - If you need to reuse logic across multiple Use Cases, extract it to the domain layer (domain entities or domain services)
+   - Use Case composition creates tight coupling and makes the system harder to understand and maintain
+
+2. **Business rules and logic should be located in the Domain:**
+   - **Most logic in Domain Objects:** Prefer placing business rules directly in domain entities and value objects where they naturally belong
+   - **Domain Services for orchestration:** When business logic requires coordination across multiple entities or needs to be reused across multiple Use Cases, create a Domain Service
+   - Use Cases should remain thin orchestrators that coordinate domain objects and infrastructure (repositories, gateways)
+
 ---
 
-### Example Handler
+### Examples
 
-```kotlin
+#### Example 1: Business Logic in Domain Entity
+
+**Good:** Business logic lives in the domain entity
+
+```java
+// Domain Entity with business logic
+public class Message {
+    private UUID id;
+    private String author;
+    private MessageText text;
+    private MessageStatus status; // DRAFT, PUBLISHED, ARCHIVED
+    private LocalDateTime publishedDate;
+    
+    // Business logic in domain entity
+    public void publish(LocalDateTime publishDate) {
+        if (this.status != MessageStatus.DRAFT) {
+            throw new IllegalStateException("Only draft messages can be published");
+        }
+        if (this.text.isEmpty()) {
+            throw new IllegalStateException("Cannot publish an empty message");
+        }
+        this.status = MessageStatus.PUBLISHED;
+        this.publishedDate = publishDate;
+    }
+}
+
+// Use Case - thin orchestrator
 @UseCase
-class PostMessageUseCaseHandler(
-    private val messageRepository: MessageRepository,
-    private val dateProvider: DateProvider
-) {
-    fun handle(request: PostMessageRequestDTO) {
-        // Orchestration logic
-        val message = Message(request.id, request.author, request.text, dateProvider.now())
-        messageRepository.save(message)
+public class PublishMessageUseCaseHandler {
+    private final MessageRepository messageRepository;
+    private final DateProvider dateProvider;
+    
+    public void handle(PublishMessageRequestDTO request) {
+        Message message = messageRepository.findById(request.messageId())
+            .orElseThrow(() -> new IllegalArgumentException("Message not found"));
+        
+        // Business logic delegated to domain entity
+        message.publish(dateProvider.now());
+        
+        messageRepository.save(message);
+    }
+}
+```
+
+**Bad:** Business logic in Use Case (avoid this)
+
+```java
+// Use Case with business logic (WRONG)
+@UseCase
+public class PublishMessageUseCaseHandler {
+    private final MessageRepository messageRepository;
+    private final DateProvider dateProvider;
+    
+    public void handle(PublishMessageRequestDTO request) {
+        Message message = messageRepository.findById(request.messageId())
+            .orElseThrow(() -> new IllegalArgumentException("Message not found"));
+        
+        // Business logic in Use Case (WRONG - should be in domain entity)
+        if (message.getStatus() != MessageStatus.DRAFT) {
+            throw new IllegalStateException("Only draft messages can be published");
+        }
+        if (message.getText().isEmpty()) {
+            throw new IllegalStateException("Cannot publish an empty message");
+        }
+        message.setStatus(MessageStatus.PUBLISHED);
+        message.setPublishedDate(dateProvider.now());
+        
+        messageRepository.save(message);
+    }
+}
+```
+
+---
+
+#### Example 2: Domain Service for Cross-Entity Logic
+
+When business logic requires coordination across multiple entities or needs to be reused across multiple Use Cases, create a Domain Service.
+
+```java
+// Domain Service (located in core/{feature}/domain/service/)
+public class FollowService {
+    
+    // Business logic that coordinates multiple entities
+    public void follow(User follower, User followee) {
+        if (follower.equals(followee)) {
+            throw new IllegalArgumentException("User cannot follow themselves");
+        }
+        
+        if (follower.isFollowing(followee)) {
+            throw new IllegalStateException("Already following this user");
+        }
+        
+        follower.follow(followee);
+        followee.addFollower(follower);
+    }
+    
+    public void unfollow(User follower, User followee) {
+        if (!follower.isFollowing(followee)) {
+            throw new IllegalStateException("Not following this user");
+        }
+        
+        follower.unfollow(followee);
+        followee.removeFollower(follower);
+    }
+}
+
+// Use Case 1 - uses Domain Service
+@UseCase
+public class FollowUserUseCaseHandler {
+    private final UserRepository userRepository;
+    private final FollowService followService; // Domain Service
+    
+    public void handle(FollowUserRequestDTO request) {
+        User follower = userRepository.findById(request.followerId())
+            .orElseThrow(() -> new IllegalArgumentException("Follower not found"));
+        User followee = userRepository.findById(request.followeeId())
+            .orElseThrow(() -> new IllegalArgumentException("Followee not found"));
+        
+        // Delegate business logic to Domain Service
+        followService.follow(follower, followee);
+        
+        userRepository.save(follower);
+        userRepository.save(followee);
+    }
+}
+
+// Use Case 2 - reuses the same Domain Service
+@UseCase
+public class UnfollowUserUseCaseHandler {
+    private final UserRepository userRepository;
+    private final FollowService followService; // Same Domain Service reused
+    
+    public void handle(UnfollowUserRequestDTO request) {
+        User follower = userRepository.findById(request.followerId())
+            .orElseThrow(() -> new IllegalArgumentException("Follower not found"));
+        User followee = userRepository.findById(request.followeeId())
+            .orElseThrow(() -> new IllegalArgumentException("Followee not found"));
+        
+        // Reuse business logic from Domain Service
+        followService.unfollow(follower, followee);
+        
+        userRepository.save(follower);
+        userRepository.save(followee);
+    }
+}
+```
+
+**Key Points:**
+- Domain Service contains reusable business logic that coordinates multiple entities
+- Multiple Use Cases can reuse the same Domain Service
+- Domain Services are part of the core module (no framework dependencies)
+- Use Cases remain thin orchestrators focused on infrastructure coordination
+
+---
+
+#### Example 3: Why Use Cases Should NOT Call Other Use Cases
+
+**Bad:** Use Case calling another Use Case (avoid this)
+
+```java
+// WRONG: Use Case calling another Use Case
+@UseCase
+public class PostMessageAndNotifyUseCaseHandler {
+    private final PostMessageUseCaseHandler postMessageUseCaseHandler; // WRONG
+    private final NotifyFollowersUseCaseHandler notifyFollowersUseCaseHandler; // WRONG
+    
+    public void handle(PostMessageAndNotifyRequestDTO request) {
+        // Calling other Use Cases creates tight coupling (WRONG)
+        postMessageUseCaseHandler.handle(new PostMessageRequestDTO(...));
+        notifyFollowersUseCaseHandler.handle(new NotifyFollowersRequestDTO(...));
+    }
+}
+```
+
+**Good:** Extract shared logic to Domain Service
+
+```java
+// Solution: Extract to Domain Service if it's business logic
+public class MessagePublicationService {
+    public PublishedMessage publishMessage(User author, String text, LocalDateTime publishedDate) {
+        // Business logic for publishing
+        Message message = new Message(UUID.randomUUID(), author.getId(), text, publishedDate);
+        return new PublishedMessage(message, author.getFollowers());
+    }
+}
+
+@UseCase
+public class PostMessageUseCaseHandler {
+    private final MessageRepository messageRepository;
+    private final UserRepository userRepository;
+    private final MessagePublicationService messagePublicationService;
+    private final NotificationGateway notificationGateway;
+    
+    public void handle(PostMessageRequestDTO request) {
+        User author = userRepository.findById(request.authorId())
+            .orElseThrow(() -> new IllegalArgumentException("Author not found"));
+        
+        // Use Domain Service for business logic
+        PublishedMessage published = messagePublicationService.publishMessage(
+            author, request.text(), dateProvider.now()
+        );
+        
+        messageRepository.save(published.getMessage());
+        
+        // Notify followers (infrastructure concern)
+        notificationGateway.notifyFollowers(published.getFollowers(), published.getMessage());
     }
 }
 ```
@@ -168,12 +376,146 @@ Located in `adapters/driven/persistence/hibernate/{feature}/`.
 
 ---
 
+### Example Persistence Adapter
+
+```java
+@Repository
+public class MessageHibernateRepository implements MessageRepository {
+    private final MessageJpaEntityHibernateRepository messageJpaEntityHibernateRepository;
+    private final MessageJpaEntityMapper messageJpaEntityMapper;
+
+    public MessageHibernateRepository(
+            MessageJpaEntityHibernateRepository messageJpaEntityHibernateRepository,
+            MessageJpaEntityMapper messageJpaEntityMapper) {
+        this.messageJpaEntityHibernateRepository = messageJpaEntityHibernateRepository;
+        this.messageJpaEntityMapper = messageJpaEntityMapper;
+    }
+
+    @Override
+    public Message save(Message message) {
+        MessageJpaEntity messageJpaEntity = messageJpaEntityMapper.toJpaEntity(message.data());
+        MessageJpaEntity savedJpaEntity = messageJpaEntityHibernateRepository.save(messageJpaEntity);
+        return Message.fromData(messageJpaEntityMapper.toData(savedJpaEntity));
+    }
+
+    @Override
+    public List<Message> findAllByAuthor(String author) {
+        List<MessageJpaEntity> messageJpaEntities = messageJpaEntityHibernateRepository.findAllByAuthor(author);
+        return messageJpaEntities.stream()
+                .map(messageJpaEntity -> Message.fromData(messageJpaEntityMapper.toData(messageJpaEntity)))
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public Optional<Message> findById(UUID messageId) {
+        return messageJpaEntityHibernateRepository.findById(messageId)
+                .map(messageJpaEntity -> Message.fromData(messageJpaEntityMapper.toData(messageJpaEntity)));
+    }
+}
+```
+
+**Key Principles:**
+- **Implements port interface:** The adapter implements the repository interface defined in the core module's application layer
+- **Constructor injection:** Inject both the Spring Data JPA repository and the MapStruct mapper
+- **Conversion pattern:** Always convert through the Snapshotable pattern:
+  - **Save:** `Domain Entity` → `message.data()` → `Mapper.toJpaEntity()` → `JPA Entity` → save → `Mapper.toData()` → `Message.fromData()` → `Domain Entity`
+  - **Load:** `JPA Entity` → `Mapper.toData()` → `Message.fromData()` → `Domain Entity`
+- **Never expose JPA entities:** Domain entities (Message) go in and out, never JPA entities (MessageJpaEntity)
+- **Delegate to Spring Data:** Use Spring Data JPA repository for actual database operations
+- **Stateless:** The adapter has no state, only coordinates between JPA repository and mapper
+
+---
+
+### Spring Data JPA Hibernate Repository
+
+The Spring Data JPA repository is a simple interface that extends `JpaRepository` and provides database operations for JPA entities.
+
+**Location:** `adapters/driven/persistence/hibernate/{feature}/jpa/repository/`
+
+```java
+@Repository
+public interface MessageJpaEntityHibernateRepository extends JpaRepository<MessageJpaEntity, UUID> {
+    // Derived query method (Spring Data JPA naming convention)
+    List<MessageJpaEntity> findAllByAuthor(String author);
+    
+    // Custom HQL query using @Query annotation
+    @Query("SELECT m FROM MessageJpaEntity m WHERE m.author = :author AND m.publishedDate > :date ORDER BY m.publishedDate DESC")
+    List<MessageJpaEntity> findRecentMessagesByAuthor(@Param("author") String author, @Param("date") LocalDateTime date);
+}
+```
+
+**Key Principles:**
+- **Interface only:** Spring Data JPA automatically generates the implementation at runtime
+- **Extends JpaRepository:** Provides standard CRUD operations (save, findById, findAll, delete, etc.)
+- **Generic types:** Specify the JPA entity type (MessageJpaEntity) and ID type (UUID)
+- **Custom query methods:** Define custom finder methods using Spring Data JPA naming conventions (e.g., `findAllByAuthor`)
+- **@Query annotation:** Use `@Query` with HQL (Hibernate Query Language) for complex queries that cannot be expressed with naming conventions. Use `@Param` to bind method parameters to query parameters
+- **@Repository annotation:** Marks the interface as a Spring Data repository for component scanning
+- **Works with JPA entities:** Only operates on JPA entities (MessageJpaEntity), never domain entities (Message)
+- **No business logic:** Pure data access layer, no business rules or domain logic
+
+**Query Method Naming Conventions:**
+- `findBy{Property}`: Find entities by a specific property (e.g., `findByAuthor`)
+- `findAllBy{Property}`: Find all entities matching a property (e.g., `findAllByAuthor`)
+- `existsBy{Property}`: Check if entities exist with a property (e.g., `existsByEmail`)
+- `countBy{Property}`: Count entities matching a property (e.g., `countByStatus`)
+- `deleteBy{Property}`: Delete entities by a property (e.g., `deleteByAuthor`)
+
+Spring Data JPA automatically translates these method names into SQL queries without requiring manual implementation.
+
+---
+
 ### Web Adapter (Driving/Spring Boot)
 
 Located in `adapters/driving/web/spring/`.
 
 - **Controllers:** Annotated with `@RestController`. Inject UseCaseHandlers.
+- **Naming Convention:** Use `*Resource` suffix (e.g., `MessageResource`, `UserResource`) to follow RESTful semantics.
 - **Configuration:** Use a custom configuration class (`CustomAnnotationScanConfiguration`) to scan core module packages and detect `@UseCase` and `@Mapper` annotations.
+
+---
+
+### Example REST Resource
+
+```java
+@RestController
+@RequestMapping("/api/messages")
+public class MessageResource {
+    private static final Logger logger = LoggerFactory.getLogger(MessageResource.class);
+    
+    private final PostMessageUseCaseHandler postMessageUseCaseHandler;
+    private final EditMessageUseCaseHandler editMessageUseCaseHandler;
+
+    public MessageResource(
+            PostMessageUseCaseHandler postMessageUseCaseHandler,
+            EditMessageUseCaseHandler editMessageUseCaseHandler) {
+        this.postMessageUseCaseHandler = postMessageUseCaseHandler;
+        this.editMessageUseCaseHandler = editMessageUseCaseHandler;
+    }
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public void postMessage(@RequestBody PostMessageRequestDTO request) {
+        logger.debug("Post message: {}", request);
+        postMessageUseCaseHandler.handle(request);
+    }
+
+    @PutMapping("/{messageId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void editMessage(
+            @PathVariable String messageId,
+            @RequestBody EditMessageRequestDTO request) {
+        logger.debug("Edit message {}: {}", messageId, request);
+        editMessageUseCaseHandler.handle(request);
+    }
+}
+```
+
+**Key Principles:**
+- **Thin layer:** Only handle HTTP concerns (routing, status codes, parameters)
+- **Delegate:** All business logic goes to Use Case Handlers
+- **Constructor injection:** Inject use case handlers (annotated with `@UseCase`)
+- **DTOs:** Accept and return DTOs from the core module, never domain entities directly
 
 ---
 
@@ -306,6 +648,34 @@ Use fixture classes (e.g., `MessagingFixture`) to standardize Given–When–The
 **Location:** `adapters/src/test`
 **Technology:** `@SpringBootTest`, TestContainers (PostgreSQL), RestAssured (API).
 **Goal:** Validate Spring configuration and SQL/HTTP flows.
+
+**Test Types and Scope:**
+
+There are two main approaches for integration/E2E testing in Clean Architecture:
+
+1. **E2E Tests (REST Endpoint Testing):**
+   - Test the complete flow from HTTP request to database and back
+   - Use RestAssured or similar tools to call actual REST endpoints
+   - Verify HTTP status codes, response bodies, and end-to-end behavior
+   - Example: POST to `/api/messages`, verify 201 status, then GET to verify persistence
+
+2. **Integration Tests (UseCase + Real DB):**
+   - Test UseCaseHandlers with real database adapters (no mocks)
+   - Verify that the core module is properly wired with persistence adapters
+   - Focus on data persistence, retrieval, and adapter conversions
+   - Example: Call `PostMessageUseCaseHandler.handle()` directly, verify data in database
+
+**Important Testing Principle:**
+
+Integration and E2E tests should **verify that components are properly wired together**, not exhaustively test all business rule cardinalities. The goal is to ensure:
+- Spring dependency injection works correctly
+- Database mappings and queries function properly
+- REST endpoints route to the correct use cases
+- Data flows correctly through all layers
+
+**Business logic cardinalities** (edge cases, validation rules, complex scenarios) should be thoroughly tested in **fast unit tests** at the core/UseCase level with in-memory test doubles. Integration/E2E tests should cover only a few representative scenarios to confirm the integration works, avoiding duplication of business logic testing.
+
+**This approach avoids relying on heavy E2E/Integration tests that take a long time to run** to test the numerous business rules. By testing business logic exhaustively with fast unit tests in the core module, you maintain rapid feedback loops and keep your test suite efficient, while integration/E2E tests focus solely on verifying that all components are correctly wired together.
 
 ---
 

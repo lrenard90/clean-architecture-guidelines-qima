@@ -527,6 +527,11 @@ public class MessageResource {
 **Technology:** JUnit 5, AssertJ.
 **No Spring context.**
 
+**Goal:** Test business logic in isolation from infrastructure concerns (databases, HTTP, frameworks). These tests should be fast, deterministic, and focused on verifying **behavior** rather than implementation details.
+
+**Behavior-Driven Testing Approach:**  
+Write tests that verify **what** the system does, not **how** it does it. This approach produces resilient tests that don't break when you refactor internal implementation details. A good unit test answers: "Given this initial state, when I perform this action, what observable outcome should I expect?"
+
 **Test Doubles:**  
 Prefer in-memory repositories (e.g., `InMemoryMessageRepository` using a `HashMap`) over heavy mocks (Mockito) when possible.
 

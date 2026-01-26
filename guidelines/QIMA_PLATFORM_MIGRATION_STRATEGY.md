@@ -145,8 +145,8 @@ We recommend the **Strangler Fig Pattern**: gradually replace legacy code with c
    ```java
    // core/src/main/java/com/qima/platform/core/inspectiontype/domain/entity/InspectionType.java
    public class InspectionType {
-       private final InspectionTypeId id;
-       private final BrandId brandId;
+       private final Long id;
+       private final Long brandId;
        private String description;
        private boolean active;
        
@@ -160,8 +160,8 @@ We recommend the **Strangler Fig Pattern**: gradually replace legacy code with c
    ```java
    // core/src/main/java/com/qima/platform/core/inspectiontype/application/port/InspectionTypeRepository.java
    public interface InspectionTypeRepository {
-       Optional<InspectionType> findById(InspectionTypeId id);
-       List<InspectionType> findAllByBrandId(BrandId brandId);
+       Optional<InspectionType> findById(Long id);
+       List<InspectionType> findAllByBrandId(Long brandId);
        InspectionType save(InspectionType inspectionType);
    }
    ```
@@ -212,8 +212,8 @@ We recommend the **Strangler Fig Pattern**: gradually replace legacy code with c
        private final InspectionTypeMapper mapper;
        
        @Override
-       public Optional<InspectionType> findById(InspectionTypeId id) {
-           return jpaRepository.findById(id.value())
+       public Optional<InspectionType> findById(Long id) {
+           return jpaRepository.findById(id)
                .map(mapper::toDomain);
        }
    }
@@ -234,7 +234,102 @@ We recommend the **Strangler Fig Pattern**: gradually replace legacy code with c
    }
    ```
 
-7. **Keep legacy code working** — The old `InspectionTypeService` can coexist during transition
+7. **Create unit test tooling**
+
+   As part of the migration, create reusable test infrastructure in `core/src/test`:
+
+   **a) Test Builders** — Fluent builders to easily set up domain entities in tests:
+   ```java
+   // core/src/test/java/com/qima/platform/core/inspectiontype/InspectionTypeBuilder.java
+   public class InspectionTypeBuilder {
+       private Long id = 1L;
+       private Long brandId = 100L;
+       private String description = "Default description";
+       private boolean active = true;
+
+       public static InspectionTypeBuilder anInspectionType() {
+           return new InspectionTypeBuilder();
+       }
+
+       public InspectionTypeBuilder withId(Long id) {
+           this.id = id;
+           return this;
+       }
+
+       public InspectionTypeBuilder withBrandId(Long brandId) {
+           this.brandId = brandId;
+           return this;
+       }
+
+       public InspectionTypeBuilder withDescription(String description) {
+           this.description = description;
+           return this;
+       }
+
+       public InspectionTypeBuilder active() {
+           this.active = true;
+           return this;
+       }
+
+       public InspectionTypeBuilder inactive() {
+           this.active = false;
+           return this;
+       }
+
+       public InspectionType build() {
+           return new InspectionType(id, brandId, description, active);
+       }
+   }
+   ```
+
+   **b) In-Memory Test Doubles** — Simple implementations of repository ports for fast unit tests:
+   ```java
+   // core/src/test/java/com/qima/platform/core/inspectiontype/InMemoryInspectionTypeRepository.java
+   public class InMemoryInspectionTypeRepository implements InspectionTypeRepository {
+       private final Map<Long, InspectionType> store = new HashMap<>();
+
+       @Override
+       public Optional<InspectionType> findById(Long id) {
+           return Optional.ofNullable(store.get(id));
+       }
+
+       @Override
+       public List<InspectionType> findAllByBrandId(Long brandId) {
+           return store.values().stream()
+               .filter(it -> it.getBrandId().equals(brandId))
+               .toList();
+       }
+
+       @Override
+       public InspectionType save(InspectionType inspectionType) {
+           // Defensive copy using Snapshotable pattern
+           InspectionType copy = InspectionType.fromData(inspectionType.data());
+           store.put(copy.getId(), copy);
+           return copy;
+       }
+
+       // Test helper methods
+       public void givenExists(InspectionType inspectionType) {
+           save(inspectionType);
+       }
+
+       public InspectionType get(Long id) {
+           return store.get(id);
+       }
+
+       public void clear() {
+           store.clear();
+       }
+   }
+   ```
+
+   **Key principles for test tooling:**
+   - Builders provide sensible defaults so tests only specify what's relevant to the scenario
+   - In-memory repositories implement the port interface exactly, enabling behavior-focused tests
+   - Defensive copying in `save()` prevents false positives (see OVERALL_GUIDELINES.md)
+   - Test helpers like `givenExists()` improve test readability
+
+8. **Keep legacy code working** — The old `InspectionTypeService` can coexist during transition
 
 ---
 

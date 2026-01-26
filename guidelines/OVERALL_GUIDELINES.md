@@ -78,6 +78,9 @@ State modifications must go through business methods (e.g., `editText()`, `follo
 Use Value Objects for attributes requiring validation (e.g., `MessageText`, `UserEmail`).
 Validation occurs in the `init` block.
 
+**IDs Without Validation:**  
+Do not wrap IDs in Value Objects if there is no validation logic. Use primitive types (`Long`, `UUID`, `String`) directly instead. For example, use `Long` for `brandId` rather than creating a `BrandId` value object that adds no value. Value Objects should only be introduced when they encapsulate meaningful validation or behavior.
+
 ---
 
 ### Example Entity Structure
@@ -684,7 +687,121 @@ Integration and E2E tests should **verify that components are properly wired tog
 
 ---
 
-## 6. Specific Coding Rules
+## 6. Migration Strategy
+
+### Leveraging Existing Cucumber Tests
+
+The existing codebase has extensive Cucumber tests covering most business rules. This is a significant asset for migration because:
+
+1. **Business Rules Documentation:** Cucumber scenarios serve as executable specifications documenting expected behavior
+2. **Safety Net:** They provide confidence that migrated code preserves existing functionality
+3. **Migration Validation:** Run Cucumber tests after each migration step to verify behavior is unchanged
+
+**Cucumber Tests as a Safety Belt During Migration:**
+
+During the migration process, existing Cucumber tests serve as a **temporary safety belt**. Keep them running until the corresponding business rules are fully covered by behavior unit tests in the core module. This ensures:
+- No regression is introduced during refactoring
+- Business behavior is preserved even as code structure changes
+- Confidence to proceed with migration knowing tests will catch any deviation
+
+Once a business rule is properly tested with fast unit tests, the corresponding Cucumber scenario becomes redundant and can be retired.
+
+### Migration Approach: From E2E to Behavior Unit Tests
+
+A key benefit of Clean Architecture is **reducing reliance on heavy E2E tests** by moving business rule testing to fast, isolated unit tests.
+
+**Current State (Before Migration):**
+- Business rules tested primarily through Cucumber E2E tests
+- Tests require full Spring context, database containers, HTTP servers
+- Slow feedback loops, long CI pipelines
+- Business logic scattered across services, making isolated testing difficult
+
+**Target State (After Migration):**
+- Business rules tested with **behavior unit tests** in the core module
+- Tests run in milliseconds with in-memory test doubles
+- E2E/Cucumber tests reduced to **integration verification only**
+- Fast feedback loops, efficient CI pipelines
+
+### Migration Steps
+
+#### Step 1: Identify Business Rules in Cucumber Scenarios
+
+For each Cucumber feature file:
+1. Extract the business rules being tested (the Given/When/Then scenarios)
+2. Document which rules belong to which domain concept
+3. Identify rules that can be tested in isolation vs. those requiring integration
+
+#### Step 2: Create Domain Entities with Business Logic
+
+For each identified business rule:
+1. Create or enhance domain entities in the core module
+2. Implement business logic as methods on domain entities or domain services
+3. Use the Snapshotable pattern for persistence mapping
+
+#### Step 3: Write Behavior Unit Tests
+
+For each business rule migrated to the domain:
+1. Create corresponding unit tests in `core/src/test`
+2. Use in-memory test doubles (not mocks)
+3. Follow the Given/When/Then structure from Cucumber scenarios
+4. Verify the same behavior, but without infrastructure dependencies
+
+**Example - Migrating a Cucumber Scenario:**
+
+```gherkin
+# Original Cucumber scenario
+Scenario: User cannot publish an empty message
+  Given a user "alice" with a draft message with empty text
+  When the user tries to publish the message
+  Then the publication should fail with error "Cannot publish an empty message"
+```
+
+```java
+// Migrated behavior unit test (fast, no Spring context)
+@Test
+void should_not_allow_publishing_empty_message() {
+    // Given
+    Message draftMessage = MessageFixture.aDraftMessage()
+        .withAuthor("alice")
+        .withEmptyText()
+        .build();
+    
+    // When / Then
+    assertThatThrownBy(() -> draftMessage.publish(now))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("Cannot publish an empty message");
+}
+```
+
+#### Step 4: Reduce Cucumber Tests to Integration Verification
+
+Once business rules are covered by unit tests:
+1. Keep a **minimal subset** of Cucumber scenarios to verify integration (wiring, HTTP routing, database persistence)
+2. Remove redundant Cucumber scenarios that duplicate unit test coverage
+3. Focus remaining E2E tests on happy-path flows and critical integration points
+
+### Benefits of This Migration
+
+| Aspect | Before (Cucumber E2E) | After (Behavior Unit Tests) |
+|--------|----------------------|----------------------------|
+| **Execution Time** | Seconds to minutes per test | Milliseconds per test |
+| **Feedback Loop** | Slow (wait for full context) | Instant |
+| **Debugging** | Complex (many layers involved) | Simple (isolated logic) |
+| **Maintenance** | High (infrastructure changes break tests) | Low (tests focus on behavior) |
+| **Coverage Confidence** | Good but expensive | Excellent and cheap |
+
+### Gradual Migration Strategy
+
+Migration should be **incremental**, not big-bang:
+
+1. **Start with high-value domains:** Begin with features that have the most complex business rules or the slowest E2E tests
+2. **Migrate one feature at a time:** Complete the full cycle (domain entity → unit tests → reduce E2E) for one feature before moving to the next
+3. **Keep Cucumber tests running:** During migration, both test suites run in parallel to ensure no regression
+4. **Retire Cucumber tests gradually:** Only remove E2E tests after confirming unit test coverage is complete
+
+---
+
+## 7. Specific Coding Rules
 
 - **No Framework in the Core:** Never import `org.springframework.*` or `jakarta.persistence.*` in the `core` module.
 - **Time Management:** Never call `LocalDateTime.now()` directly in business code; always use `DateProvider.now()`.

@@ -651,6 +651,120 @@ Use fixture classes (e.g., `MessagingFixture`) to standardize Given–When–The
 
 ---
 
+### Behavior-Focused Test Structure
+
+Unit tests should be organized to clearly communicate **business rules** and **features**, not implementation details. Use JUnit 5's `@Nested` classes and `@DisplayName` annotations to create a hierarchical structure that reads like a specification.
+
+**Key Principles:**
+
+1. **Feature-Level Test Class:** The outer class represents a feature or use case
+2. **Rule-Level Nested Classes:** Use `@Nested` classes to group tests by business rule
+3. **Descriptive Names:** Use `@DisplayName` to describe rules in plain language
+4. **Scenario-Level Test Methods:** Each test method describes a specific scenario
+
+**Example Structure:**
+
+```java
+@DisplayName("Feature: Edit a message")
+class EditMessageUseCaseHandlerTest {
+    private MessagingFixture fixture;
+
+    @BeforeEach
+    void setUp() {
+        fixture = new MessagingFixture();
+    }
+
+    @Test
+    void userCanEditHisMessage() {
+        // Given
+        fixture.givenTheFollowingMessagesExists(List.of(
+            aMessage().withId(messageId).withText("Hello world!").build()
+        ));
+
+        // When
+        fixture.whenUserEditHisMessage(messageId, "Hello world! I'm Alice");
+
+        // Then
+        fixture.thenMessageShouldBe(
+            aMessage().withId(messageId).withText("Hello world! I'm Alice").build()
+        );
+    }
+
+    @Nested
+    class MessageNotFound {
+        @Test
+        void userCannotEditAMessageThatDoesNotExist() {
+            fixture.givenTheFollowingMessagesExists(Collections.emptyList());
+
+            fixture.whenUserEditHisMessage(messageId, "New text");
+
+            fixture.thenErrorShouldBe("Message not found");
+        }
+    }
+
+    @Nested
+    @DisplayName("Rule: a message size is limited to 280 characters")
+    class MessageSizeLimitation {
+        @Test
+        void userCannotEditAMessageWithMoreThan280Characters() {
+            fixture.givenTheFollowingMessagesExists(List.of(
+                aMessage().withId(messageId).withText("Hello").build()
+            ));
+
+            fixture.whenUserEditHisMessage(messageId, "a".repeat(281));
+
+            fixture.thenErrorShouldBe("Message text must be less than 280 characters");
+        }
+    }
+
+    @Nested
+    @DisplayName("Rule: a message cannot be empty")
+    class MessageNotEmpty {
+        @Test
+        void userCannotEditAMessageWithAnEmptyText() {
+            fixture.givenTheFollowingMessagesExists(List.of(
+                aMessage().withId(messageId).withText("Hello").build()
+            ));
+
+            fixture.whenUserEditHisMessage(messageId, "");
+
+            fixture.thenErrorShouldBe("Message text must not be blank");
+        }
+
+        @Test
+        void userCannotEditAMessageWithABlankText() {
+            fixture.givenTheFollowingMessagesExists(List.of(
+                aMessage().withId(messageId).withText("Hello").build()
+            ));
+
+            fixture.whenUserEditHisMessage(messageId, " ");
+
+            fixture.thenErrorShouldBe("Message text must not be blank");
+        }
+    }
+}
+```
+
+**Benefits of This Structure:**
+
+- **Self-Documenting:** Test output reads like a specification:
+  ```
+  Feature: Edit a message
+    ✓ userCanEditHisMessage
+    MessageNotFound
+      ✓ userCannotEditAMessageThatDoesNotExist
+    Rule: a message size is limited to 280 characters
+      ✓ userCannotEditAMessageWithMoreThan280Characters
+    Rule: a message cannot be empty
+      ✓ userCannotEditAMessageWithAnEmptyText
+      ✓ userCannotEditAMessageWithABlankText
+  ```
+- **Easy Navigation:** Business rules are clearly grouped and easy to find
+- **Living Documentation:** Tests serve as executable specifications of business behavior
+- **Refactoring Confidence:** When a test fails, the hierarchical name immediately tells you which business rule is broken
+
+---
+
 ### Integration / E2E Tests
 
 **Location:** `adapters/src/test`
